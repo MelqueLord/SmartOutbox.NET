@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk.Worker">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../SmartOutbox.Core/SmartOutbox.Core.csproj" />
+    <ProjectReference Include="../SmartOutbox.EntityFramework/SmartOutbox.EntityFramework.csproj" />
+    <ProjectReference Include="../SmartOutbox.RabbitMQ/SmartOutbox.RabbitMQ.csproj" />
+    <PackageReference Include="Microsoft.Extensions.Hosting" Version="8.0.0" />
+  </ItemGroup>
+</Project>

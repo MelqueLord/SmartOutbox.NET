@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../SmartOutbox.Core/SmartOutbox.Core.csproj" />
+    <ProjectReference Include="../SmartOutbox.EntityFramework/SmartOutbox.EntityFramework.csproj" />
+    <ProjectReference Include="../SmartOutbox.RabbitMQ/SmartOutbox.RabbitMQ.csproj" />
+    <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="8.0.0" />
+    <PackageReference Include="Swashbuckle.AspNetCore" Version="6.7.0" />
+    <PackageReference Include="Serilog.AspNetCore" Version="9.0.0" />
+      <PackageReference Include="Microsoft.Extensions.Diagnostics.HealthChecks.EntityFrameworkCore" Version="8.0.0" />
+  </ItemGroup>
+</Project>

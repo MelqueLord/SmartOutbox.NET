@@ -1,0 +1,10 @@
+using System.Threading;
+using System.Threading.Tasks;
+
+namespace SmartOutbox.RabbitMQ
+{
+    public interface IRabbitMqPublisher
+    {
+        Task PublishAsync(string eventType, string payload, CancellationToken cancellationToken = default);
+    }
+}
