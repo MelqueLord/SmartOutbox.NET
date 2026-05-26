@@ -2,11 +2,17 @@
 
 Planejamento das próximas melhorias e evolução do SmartOutbox.NET.
 
+Implementado
+
+- ✅ Backoff exponencial com jitter e `NextAttemptAt` para scheduling eficiente.
+- ✅ Abstração `IRabbitMqClient` para maior testabilidade e desacoplamento.
+- ✅ Controle transacional melhorado: `EfEventPublisher` não commita, responsabilidade da aplicação.
+
 Curto prazo
 
-- Adicionar backoff exponencial e jitter às tentativas do worker.
+- Escrever testes unitários e de integração para publisher, worker e processador de outbox.
 - Fornecer UI ou endpoint administrativo para visualizar e reprocessar `dead_letter`.
-- Escrever testes unitários e de integração para publisher e worker.
+- CI/CD pipeline com build automatizado, testes e push para repositório remoto.
 
 Médio prazo
 

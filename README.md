@@ -91,8 +91,15 @@ The request persists the order and writes an outbox event inside the same transa
 
 ## Retry strategy
 
-- Messages are retried up to `MaxRetryCount` times.
+- Messages are retried up to `MaxRetryCount` times with **exponential backoff and jitter**.
+- Each retry schedules the next attempt using `NextAttemptAt` column to avoid constant polling overhead.
 - After retry exhaustion, the message is dead-lettered by marking it processed and preserving the error text.
+- Backoff base is configurable via `OutboxProcessor:BackoffBaseSeconds` in settings.
+
+## Transaction handling
+
+- The `EfEventPublisher` does not call `SaveChanges`; the application layer (e.g., `OrderService`) maintains transactional integrity.
+- This ensures atomic persistence of both domain entities and outbox messages within a single database transaction.
 
 ## Idempotency
 

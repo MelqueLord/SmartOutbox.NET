@@ -12,9 +12,11 @@ curl -X POST http://localhost:5000/orders \
 
 Fluxo interno
 
-1. A API persiste a entidade `Order` dentro de uma transação de banco de dados.
-2. O evento `OrderCreatedEvent` é serializado e gravado na tabela `outbox_messages` dentro da mesma transação.
-3. O `worker` de outbox consulta mensagens não processadas, publica no RabbitMQ e marca como processadas.
+1. A API inicia uma transação de banco de dados e persiste a entidade `Order`.
+2. `IEventPublisher.PublishAsync()` é chamado, que adiciona um `OutboxMessage` serializado na mesma transação **sem fazer commit**.
+3. A camada de aplicação (OrderService) chama `dbContext.SaveChangesAsync()` para persistir atomicamente `Order` e `OutboxMessage`.
+4. O `worker` de outbox consulta mensagens com `ProcessedAt IS NULL` e `NextAttemptAt <= now`, publica no RabbitMQ.
+5. Sucesso: marca `ProcessedAt = now`; Falha: incrementa `RetryCount` e agenda próxima tentativa via `NextAttemptAt` usando backoff exponencial com jitter.
 
 Health checks
 
@@ -31,8 +33,13 @@ Fluxo de desenvolvimento
 
 Observabilidade
 
-- Acesse a UI do RabbitMQ para inspeção de exchanges/queues em `http://localhost:15672`.
-- Verifique a tabela `outbox_messages` para mensagens com `Error` e contagem de tentativas (`RetryCount`).
+- Acesse a UI do RabbitMQ para inspeção de exchanges/queues em `http://localhost:15672` (usuário: `guest`, senha: `guest`).
+- Verifique a tabela `outbox_messages` para:
+  - `Error`: descrição do erro da última falha.
+  - `RetryCount`: quantidade de tentativas realizadas.
+  - `NextAttemptAt`: timestamp da próxima tentativa agendada (NULL = nunca tentou ou foi bem-sucedida).
+  - `ProcessedAt`: timestamp da conclusão (NULL = pendente).
+- Use logs estruturados (Serilog) para rastrear tentativas e falhas: procure por `NextAttemptAt` e `Retry` nos logs.
 
 Resolução de problemas
 

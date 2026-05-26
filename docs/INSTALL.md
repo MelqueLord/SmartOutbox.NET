@@ -32,16 +32,18 @@ dotnet ef database update --project SmartOutbox.EntityFramework.csproj --startup
 
 Configuração
 
-- As configurações principais ficam em `appsettings.json` de cada serviço.
-- Substitua valores sensíveis (senhas, usuários) por variáveis de ambiente ou gerenciador de segredos em produção.
+As configurações principais ficam em `appsettings.json` de cada serviço:
 
-Credenciais usadas no `docker-compose.yml` (padrões):
+- **Banco de dados**: `ConnectionStrings:DefaultConnection`
+- **RabbitMQ**: `RabbitMq:HostName`, `Port`, `UserName`, `Password`, `VirtualHost`
+- **Processador de Outbox**: `OutboxProcessor:PollingIntervalSeconds`, `MaxRetryCount`, `BatchSize`, `BackoffBaseSeconds`
 
-- Host: `postgres`
-- Porta: `5432`
-- Banco: `smartoutbox`
-- Usuário: `smartoutbox`
-- Senha: `smartoutbox`
+Substituia valores sensíveis (senhas, usuários) por variáveis de ambiente ou gerenciador de segredos em produção.
+
+Credenciais padrão no `docker-compose.yml`:
+
+- **PostgreSQL**: Host=`postgres`, Porta=`5432`, Banco=`smartoutbox`, Usuário=`smartoutbox`, Senha=`smartoutbox`
+- **RabbitMQ**: Usuário=`guest`, Senha=`guest`, VirtualHost=`/`
 
 Boas práticas para produção
 
