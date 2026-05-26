@@ -38,7 +38,8 @@ namespace SmartOutbox.EntityFramework
             };
 
             await _dbContext.OutboxMessages.AddAsync(outboxMessage, cancellationToken);
-            await _dbContext.SaveChangesAsync(cancellationToken);
+            // NOTE: Do not call SaveChanges here. The caller (application layer) must
+            // commit the unit of work so both domain and outbox are persisted atomically.
         }
     }
 }

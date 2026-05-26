@@ -33,7 +33,8 @@ namespace SmartOutbox.EntityFramework.Migrations
                     CreatedAt = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false),
                     ProcessedAt = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: true),
                     RetryCount = table.Column<int>(type: "integer", nullable: false, defaultValue: 0),
-                    Error = table.Column<string>(type: "character varying(1000)", maxLength: 1000, nullable: true)
+                    Error = table.Column<string>(type: "character varying(1000)", maxLength: 1000, nullable: true),
+                    NextAttemptAt = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: true)
                 },
                 constraints: table =>
                 {

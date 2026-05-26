@@ -34,7 +34,12 @@ namespace SmartOutbox.SampleApi.Services
             _dbContext.Orders.Add(order);
 
             var integrationEvent = new OrderCreatedEvent(order.Id, order.CustomerName, order.Amount);
+            // Register outbox message in the same DbContext transaction. EfEventPublisher
+            // will not call SaveChanges; the application controls the commit.
             await _eventPublisher.PublishAsync(integrationEvent, cancellationToken);
+
+            // Persist both Order and OutboxMessage atomically.
+            await _dbContext.SaveChangesAsync(cancellationToken);
             await transaction.CommitAsync(cancellationToken);
 
             return order;

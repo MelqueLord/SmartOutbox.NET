@@ -54,8 +54,9 @@ namespace SmartOutbox.Worker.Services
             var dbContext = scope.ServiceProvider.GetRequiredService<SmartOutbox.EntityFramework.ApplicationDbContext>();
             var publisher = scope.ServiceProvider.GetRequiredService<IRabbitMqPublisher>();
 
+            var now = DateTimeOffset.UtcNow;
             var messages = await dbContext.OutboxMessages
-                .Where(message => message.ProcessedAt == null && message.RetryCount < _options.MaxRetryCount)
+                .Where(message => message.ProcessedAt == null && message.RetryCount < _options.MaxRetryCount && (message.NextAttemptAt == null || message.NextAttemptAt <= now))
                 .OrderBy(message => message.CreatedAt)
                 .Take(_options.BatchSize)
                 .ToListAsync(cancellationToken);
@@ -82,12 +83,23 @@ namespace SmartOutbox.Worker.Services
 
                     if (message.RetryCount >= _options.MaxRetryCount)
                     {
+                        // Dead-letter: mark processed so it won't be retried.
                         message.ProcessedAt = DateTimeOffset.UtcNow;
+                        message.NextAttemptAt = null;
                         _logger.LogWarning(ex, "Message {MessageId} has reached max retries and is dead-lettered.", message.Id);
                     }
                     else
                     {
-                        _logger.LogWarning(ex, "Failed to publish message {MessageId}. Retry {RetryCount}/{MaxRetryCount}.", message.Id, message.RetryCount, _options.MaxRetryCount);
+                        // Exponential backoff with jitter
+                        var backoffBase = Math.Max(1, _options.BackoffBaseSeconds);
+                        var exponent = message.RetryCount - 1;
+                        var delaySeconds = backoffBase * Math.Pow(2, exponent);
+                        // jitter +/-20%
+                        var jitter = (new Random()).NextDouble() * 0.4 - 0.2;
+                        delaySeconds = Math.Max(1, delaySeconds * (1 + jitter));
+                        message.NextAttemptAt = DateTimeOffset.UtcNow.AddSeconds(delaySeconds);
+
+                        _logger.LogWarning(ex, "Failed to publish message {MessageId}. Retry {RetryCount}/{MaxRetryCount}. Next attempt at {NextAttemptAt}.", message.Id, message.RetryCount, _options.MaxRetryCount, message.NextAttemptAt);
                     }
                 }
             }
