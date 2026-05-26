@@ -10,6 +10,7 @@ namespace SmartOutbox.RabbitMQ
         public static IServiceCollection AddSmartOutboxRabbitMq(this IServiceCollection services, IConfiguration configuration)
         {
             services.Configure<RabbitMqOptions>(configuration.GetSection("RabbitMq"));
+            services.AddSingleton<IRabbitMqClient, DefaultRabbitMqClient>();
             services.AddSingleton<IRabbitMqPublisher, RabbitMqPublisher>();
             services.AddHealthChecks().AddCheck<RabbitMqHealthCheck>("rabbitmq");
             return services;
