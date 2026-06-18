@@ -1,121 +1,225 @@
 # SmartOutbox.NET
 
-SmartOutbox.NET is an enterprise-grade .NET 8 solution implementing the Transactional Outbox Pattern for reliable distributed event delivery.
+SmartOutbox.NET is a production-minded .NET 8 sample that demonstrates the Transactional Outbox Pattern with PostgreSQL, Entity Framework Core, RabbitMQ, a background worker, structured logging, health checks, and automated tests.
 
-## What problem does it solve?
+The repository is intentionally small: it shows the core production concepts without hiding them behind framework noise or academic abstractions.
 
-In distributed systems, the dual write problem occurs when an application persists state to a database and publishes an integration event in separate operations. If the database commit succeeds but the messaging publish fails, or vice versa, the system can become inconsistent.
+## Business Problem
 
-The transactional outbox pattern solves this by writing events into a durable outbox table inside the same transaction as the business data. A separate background process then reads the outbox, publishes events to RabbitMQ, and marks them as processed.
+Modern systems often need to persist business data and publish integration events. If an API writes an order to the database and then publishes an event to RabbitMQ in a separate operation, one operation can succeed while the other fails. That is the dual-write problem.
+
+SmartOutbox.NET solves this by writing the business row and the integration event to the same database transaction. A worker later publishes pending outbox rows to RabbitMQ and marks them as processed only after the broker accepts the message.
 
 ## Architecture
 
-```
-+--------------+    DB transaction   +--------------------+
-|  Sample API  | ------------------> |  PostgreSQL        |
-|              |                     |  Orders + Outbox   |
-+--------------+                     +--------------------+
-        |                                     |
-        |                                     v
-        |                               +-------------+
-        |                               | Outbox      |
-        |                               | Processor   |
-        |                               +-------------+
-        |                                     |
-        |                                     v
-        |                               +----------------+
-        |                               | RabbitMQ       |
-        |                               +----------------+
+```mermaid
+flowchart LR
+    Client[API Client] --> Api[SmartOutbox.SampleApi]
+    Api -->|single EF transaction| Db[(PostgreSQL)]
+    Db --> Orders[orders]
+    Db --> Outbox[outbox_messages]
+    Worker[SmartOutbox.Worker] -->|poll pending rows| Outbox
+    Worker -->|publisher confirms| Rabbit[RabbitMQ topic exchange]
+    Rabbit --> Queue[durable queue]
+    Queue --> Consumers[downstream consumers]
+    Queue -->|rejected/expired messages| Dlq[dead-letter queue]
 ```
 
-### Key components
+Components:
 
-- `SmartOutbox.Core` - Domain entities, integration event contracts, JSON serializer, and shared abstractions.
-- `SmartOutbox.EntityFramework` - EF Core persistence, `ApplicationDbContext`, and outbox event publisher.
-- `SmartOutbox.RabbitMQ` - RabbitMQ publisher, exchange configuration, and health checks.
-- `SmartOutbox.Worker` - Background service that polls `outbox_messages`, publishes events, retries failures, and dead-letters after max retries.
-- `SmartOutbox.SampleApi` - ASP.NET Core API that creates orders and publishes `OrderCreatedEvent` using the outbox pattern.
+- `SmartOutbox.Core`: entities, integration events, serialization, correlation context, and abstractions.
+- `SmartOutbox.EntityFramework`: EF Core DbContext, migrations, and outbox event publisher.
+- `SmartOutbox.RabbitMQ`: durable RabbitMQ topology, publisher confirms, message metadata, and broker health check.
+- `SmartOutbox.Worker`: polling background service with retry, exponential backoff, and terminal failure handling.
+- `SmartOutbox.SampleApi`: order API that writes orders and outbox events atomically.
+- `tests`: xUnit coverage for serialization, persistence, retry/backoff, and worker processing.
 
-## Solution structure
+## Production Concepts Demonstrated
 
+- Transactional Outbox Pattern
+- Event-Driven Architecture
+- RabbitMQ Messaging
+- Retry Policies
+- Exponential Backoff
+- Idempotency
+- Background Workers
+- Health Checks
+- Dockerized Environment
+
+## Features
+
+- Atomic order creation and event staging in one PostgreSQL transaction.
+- Durable `outbox_messages` table with retry state, error details, next-attempt scheduling, and correlation IDs.
+- Background worker that processes batches of pending events.
+- RabbitMQ durable topic exchange, durable queue, dead-letter exchange, and dead-letter queue.
+- Publisher confirmations and mandatory publish routing.
+- Message ID tracking using the outbox message ID.
+- Structured logs with correlation IDs.
+- `/healthz` endpoint for database and RabbitMQ checks.
+- Docker Compose environment for PostgreSQL, RabbitMQ, API, and worker.
+- Unit and integration test projects.
+
+## Sequence Flow
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant Client
+    participant API as Sample API
+    participant DB as PostgreSQL
+    participant Worker
+    participant MQ as RabbitMQ
+
+    Client->>API: POST /orders
+    API->>DB: Begin transaction
+    API->>DB: Insert order
+    API->>DB: Insert outbox message
+    API->>DB: Commit transaction
+    API-->>Client: 201 Created
+    Worker->>DB: Read pending outbox messages
+    Worker->>MQ: Publish event with messageId and correlationId
+    MQ-->>Worker: Publisher confirm
+    Worker->>DB: Mark message as processed
 ```
-src/
- ├── SmartOutbox.Core
- ├── SmartOutbox.EntityFramework
- ├── SmartOutbox.RabbitMQ
- ├── SmartOutbox.Worker
- ├── SmartOutbox.SampleApi
-```
 
-## Setup
+## Failure Scenarios
 
-### Requirements
+| Scenario | Behavior |
+| --- | --- |
+| API crashes before commit | Neither order nor outbox message is saved. |
+| API crashes after commit | Worker still finds the durable outbox row and publishes it. |
+| RabbitMQ is unavailable | Worker stores the error and schedules the next attempt. |
+| Message cannot be routed | Mandatory publish plus confirms surfaces the publish failure. |
+| Max retries exceeded | Message is marked as terminally failed with the last error retained. |
+| Consumer receives duplicate event | Consumer should deduplicate by `messageId`/event ID. |
+
+## Retry And Backoff
+
+The worker uses exponential backoff based on `OutboxProcessor:BackoffBaseSeconds`, capped by `OutboxProcessor:MaxBackoffSeconds`.
+
+Example with base `5` and cap `300`:
+
+- retry 1: 5 seconds
+- retry 2: 10 seconds
+- retry 3: 20 seconds
+- retry 4: 40 seconds
+- later retries stop at the configured cap
+
+The next retry timestamp is stored in `NextAttemptAt`, so workers do not repeatedly hammer the same failing row.
+
+## Idempotency
+
+Outbox delivery is at-least-once. The worker marks a row as processed only after RabbitMQ accepts the publish, but a crash between broker publish and database update can still create a duplicate delivery. Consumers should treat `messageId` as an idempotency key and store processed IDs when side effects are not naturally idempotent.
+
+## Scalability Considerations
+
+- Increase `OutboxProcessor:BatchSize` for higher throughput.
+- Run multiple worker replicas when the database query and row-locking strategy are strengthened for high concurrency.
+- Partition event routing by topic keys when there are multiple event families.
+- Keep event payloads small and immutable.
+- Add consumer-side idempotency storage before handling money, inventory, email, or external API side effects.
+- Use broker and database metrics to tune polling interval, batch size, and retry caps.
+
+## Local Setup
+
+Requirements:
 
 - .NET 8 SDK
-- Docker
-- Docker Compose
+- Docker Desktop or compatible Docker Engine
+- Optional: `dotnet-ef` for manual migrations
 
-### Run locally with Docker
+Build and test:
+
+```bash
+dotnet build SmartOutbox.NET.sln
+dotnet test SmartOutbox.NET.sln
+```
+
+Run with the SDK:
+
+```bash
+docker compose up -d postgres rabbitmq
+dotnet run --project src/SmartOutbox.SampleApi/SmartOutbox.SampleApi.csproj
+dotnet run --project src/SmartOutbox.Worker/SmartOutbox.Worker.csproj
+```
+
+RabbitMQ Management UI:
+
+- URL: `http://localhost:15672`
+- User: `guest`
+- Password: `guest`
+
+## Docker Instructions
+
+Run the full environment:
 
 ```bash
 docker compose up --build
 ```
 
-The API will be available at `http://localhost:5000`.
+Services:
 
-### Migrate database manually
+- API: `http://localhost:5000`
+- Health check: `http://localhost:5000/healthz`
+- RabbitMQ management: `http://localhost:15672`
+- PostgreSQL: `localhost:5432`
 
-If you prefer to run migrations with the SDK:
+Stop and remove containers:
 
 ```bash
-dotnet build SmartOutbox.NET.sln
-cd src/SmartOutbox.EntityFramework
-dotnet ef database update --project SmartOutbox.EntityFramework.csproj --startup-project ../SmartOutbox.SampleApi/SmartOutbox.SampleApi.csproj
+docker compose down
 ```
 
-## Example usage
+## API Usage
 
 Create an order:
 
 ```bash
 curl -X POST http://localhost:5000/orders \
   -H "Content-Type: application/json" \
-  -d '{"customerName":"Acme Corp","amount":1499.90}'
+  -H "X-Correlation-ID: demo-request-001" \
+  -d "{\"customerName\":\"Acme Corp\",\"amount\":1499.90}"
 ```
 
-The request persists the order and writes an outbox event inside the same transaction.
+Get an order:
 
-## Health checks
+```bash
+curl http://localhost:5000/orders/{orderId}
+```
 
-- `GET /healthz`
+The `POST /orders` request persists the order and an `OrderCreatedEvent` outbox row in the same transaction.
 
-## Retry strategy
+## Project Structure
 
-- Messages are retried up to `MaxRetryCount` times with **exponential backoff and jitter**.
-- Each retry schedules the next attempt using `NextAttemptAt` column to avoid constant polling overhead.
-- After retry exhaustion, the message is dead-lettered by marking it processed and preserving the error text.
-- Backoff base is configurable via `OutboxProcessor:BackoffBaseSeconds` in settings.
+```text
+src/
+  SmartOutbox.Core/
+  SmartOutbox.EntityFramework/
+  SmartOutbox.RabbitMQ/
+  SmartOutbox.SampleApi/
+  SmartOutbox.Worker/
+tests/
+  SmartOutbox.UnitTests/
+  SmartOutbox.IntegrationTests/
+docs/
+  architecture.md
+  outbox-pattern.md
+  rabbitmq-integration.md
+  retry-and-backoff.md
+```
 
-## Transaction handling
+## Documentation
 
-- The `EfEventPublisher` does not call `SaveChanges`; the application layer (e.g., `OrderService`) maintains transactional integrity.
-- This ensures atomic persistence of both domain entities and outbox messages within a single database transaction.
+- [Architecture](docs/architecture.md)
+- [Outbox Pattern](docs/outbox-pattern.md)
+- [RabbitMQ Integration](docs/rabbitmq-integration.md)
+- [Retry and Backoff](docs/retry-and-backoff.md)
 
-## Idempotency
+## Future Improvements
 
-- The outbox processor only publishes messages where `ProcessedAt` is null.
-- Duplicate event delivery should be handled by consumers through idempotency keys and event versioning.
-
-## Scalability considerations
-
-- Use batched polling in the worker to process multiple outbox messages.
-- Deploy multiple worker instances to scale event publishing.
-- Use a durable RabbitMQ exchange with topic routing.
-- Keep events immutable and consumers idempotent.
-
-## Docker composition
-
-- `postgres` - PostgreSQL persistence layer
-- `rabbitmq` - RabbitMQ broker with management UI
-- `sampleapi` - ASP.NET Core API service
-- `worker` - Background outbox processor
+- Add row claiming with `FOR UPDATE SKIP LOCKED` for safer multi-worker concurrency.
+- Add OpenTelemetry traces and metrics.
+- Add consumer sample with inbox/idempotency table.
+- Add integration tests with Testcontainers for PostgreSQL and RabbitMQ.
+- Add event versioning and schema evolution guidance.
+- Add CI workflow for build, test, and formatting checks.
