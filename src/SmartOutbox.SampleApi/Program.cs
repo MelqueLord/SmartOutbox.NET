@@ -30,8 +30,7 @@ builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
 builder.Services.AddHealthChecks()
-    .AddDbContextCheck<ApplicationDbContext>("database")
-    .AddCheck<SmartOutbox.RabbitMQ.HealthChecks.RabbitMqHealthCheck>("rabbitmq");
+    .AddDbContextCheck<ApplicationDbContext>("database");
 
 var app = builder.Build();
 

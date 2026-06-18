@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
+using SmartOutbox.Core.Interfaces;
 
 namespace SmartOutbox.SampleApi.Middleware
 {
@@ -11,22 +12,35 @@ namespace SmartOutbox.SampleApi.Middleware
         private const string HeaderName = "X-Correlation-ID";
         private readonly RequestDelegate _next;
         private readonly ILogger<CorrelationIdMiddleware> _logger;
+        private readonly ICorrelationContext _correlationContext;
 
-        public CorrelationIdMiddleware(RequestDelegate next, ILogger<CorrelationIdMiddleware> logger)
+        public CorrelationIdMiddleware(
+            RequestDelegate next,
+            ILogger<CorrelationIdMiddleware> logger,
+            ICorrelationContext correlationContext)
         {
             _next = next;
             _logger = logger;
+            _correlationContext = correlationContext;
         }
 
         public async Task InvokeAsync(HttpContext context)
         {
             var correlationId = GetOrCreateCorrelationId(context.Request.Headers);
+            _correlationContext.CorrelationId = correlationId;
             context.Items[HeaderName] = correlationId;
             context.Response.Headers[HeaderName] = correlationId;
 
             using (_logger.BeginScope(new Dictionary<string, object> { [HeaderName] = correlationId }))
             {
-                await _next(context);
+                try
+                {
+                    await _next(context);
+                }
+                finally
+                {
+                    _correlationContext.CorrelationId = null;
+                }
             }
         }
 
