@@ -6,8 +6,16 @@ using SmartOutbox.EntityFramework;
 using SmartOutbox.Worker.Options;
 using SmartOutbox.Worker.Services;
 using SmartOutbox.RabbitMQ;
+using Serilog;
 
 IHost host = Host.CreateDefaultBuilder(args)
+    .UseSerilog((context, services, configuration) =>
+    {
+        configuration
+            .ReadFrom.Configuration(context.Configuration)
+            .Enrich.FromLogContext()
+            .WriteTo.Console();
+    })
     .ConfigureAppConfiguration(config =>
     {
         config.AddJsonFile("appsettings.json", optional: false, reloadOnChange: true);
@@ -19,7 +27,15 @@ IHost host = Host.CreateDefaultBuilder(args)
         services.AddSmartOutboxCore();
         services.AddSmartOutboxEntityFramework(context.Configuration);
         services.AddSmartOutboxRabbitMq(context.Configuration);
-        services.Configure<OutboxProcessorOptions>(context.Configuration.GetSection("OutboxProcessor"));
+        services.AddOptions<OutboxProcessorOptions>()
+            .Bind(context.Configuration.GetSection("OutboxProcessor"))
+            .Validate(options => options.PollingIntervalSeconds > 0, "PollingIntervalSeconds must be greater than zero.")
+            .Validate(options => options.MaxRetryCount > 0, "MaxRetryCount must be greater than zero.")
+            .Validate(options => options.BatchSize > 0, "BatchSize must be greater than zero.")
+            .Validate(options => options.BackoffBaseSeconds > 0, "BackoffBaseSeconds must be greater than zero.")
+            .Validate(options => options.MaxBackoffSeconds >= options.BackoffBaseSeconds, "MaxBackoffSeconds must be greater than or equal to BackoffBaseSeconds.")
+            .ValidateOnStart();
+        services.AddSingleton<IBackoffCalculator, BackoffCalculator>();
         services.AddHostedService<OutboxProcessorService>();
     })
     .UseConsoleLifetime()

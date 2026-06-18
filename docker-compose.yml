@@ -34,6 +34,9 @@ services:
       RabbitMq__Port: 5672
       RabbitMq__UserName: guest
       RabbitMq__Password: guest
+      RabbitMq__QueueName: smartoutbox.events
+      RabbitMq__DeadLetterExchangeName: outbox.events.dlx
+      RabbitMq__DeadLetterQueueName: smartoutbox.events.dlq
     depends_on:
       - postgres
       - rabbitmq
@@ -50,6 +53,11 @@ services:
       RabbitMq__Port: 5672
       RabbitMq__UserName: guest
       RabbitMq__Password: guest
+      RabbitMq__QueueName: smartoutbox.events
+      RabbitMq__DeadLetterExchangeName: outbox.events.dlx
+      RabbitMq__DeadLetterQueueName: smartoutbox.events.dlq
+      OutboxProcessor__BackoffBaseSeconds: 5
+      OutboxProcessor__MaxBackoffSeconds: 300
     depends_on:
       - postgres
       - rabbitmq

@@ -9,9 +9,15 @@ namespace SmartOutbox.EntityFramework
     {
         public static IServiceCollection AddSmartOutboxEntityFramework(this IServiceCollection services, IConfiguration configuration)
         {
+            var connectionString = configuration.GetConnectionString("DefaultConnection");
+            if (string.IsNullOrWhiteSpace(connectionString))
+            {
+                throw new InvalidOperationException("Connection string 'DefaultConnection' is required.");
+            }
+
             services.AddDbContext<ApplicationDbContext>(options =>
             {
-                options.UseNpgsql(configuration.GetConnectionString("DefaultConnection"), builder =>
+                options.UseNpgsql(connectionString, builder =>
                 {
                     builder.MigrationsAssembly(typeof(ApplicationDbContext).Assembly.FullName);
                 });

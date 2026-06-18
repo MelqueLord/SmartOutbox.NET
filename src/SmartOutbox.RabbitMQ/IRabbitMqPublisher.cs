@@ -5,6 +5,11 @@ namespace SmartOutbox.RabbitMQ
 {
     public interface IRabbitMqPublisher
     {
-        Task PublishAsync(string eventType, string payload, CancellationToken cancellationToken = default);
+        Task PublishAsync(
+            string eventType,
+            string payload,
+            string messageId,
+            string? correlationId = null,
+            CancellationToken cancellationToken = default);
     }
 }

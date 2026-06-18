@@ -22,20 +22,31 @@ namespace SmartOutbox.RabbitMQ
             _logger = logger;
         }
 
-        public async Task PublishAsync(string eventType, string payload, CancellationToken cancellationToken = default)
+        public async Task PublishAsync(
+            string eventType,
+            string payload,
+            string messageId,
+            string? correlationId = null,
+            CancellationToken cancellationToken = default)
         {
             if (string.IsNullOrWhiteSpace(eventType))
             {
                 throw new ArgumentException("Event type is required.", nameof(eventType));
             }
+            if (string.IsNullOrWhiteSpace(payload))
+            {
+                throw new ArgumentException("Payload is required.", nameof(payload));
+            }
+            if (string.IsNullOrWhiteSpace(messageId))
+            {
+                throw new ArgumentException("Message id is required.", nameof(messageId));
+            }
 
             var body = Encoding.UTF8.GetBytes(payload);
             var timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
-            await _client.PublishAsync(_options.ExchangeName, eventType, body, "application/json", eventType, true, timestamp, cancellationToken).ConfigureAwait(false);
-            _logger.LogInformation("Published event {EventType} to exchange {ExchangeName}", eventType, _options.ExchangeName);
+            await _client.PublishAsync(_options.ExchangeName, eventType, body, "application/json", eventType, messageId, correlationId, true, timestamp, cancellationToken).ConfigureAwait(false);
+            _logger.LogInformation("Published event {EventType} with message id {MessageId} to exchange {ExchangeName}.", eventType, messageId, _options.ExchangeName);
         }
-
-        // Connection creation moved to DefaultRabbitMqClient.
 
         public void Dispose()
         {

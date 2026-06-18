@@ -9,5 +9,6 @@
     <ProjectReference Include="../SmartOutbox.EntityFramework/SmartOutbox.EntityFramework.csproj" />
     <ProjectReference Include="../SmartOutbox.RabbitMQ/SmartOutbox.RabbitMQ.csproj" />
     <PackageReference Include="Microsoft.Extensions.Hosting" Version="8.0.0" />
+    <PackageReference Include="Serilog.AspNetCore" Version="9.0.0" />
   </ItemGroup>
 </Project>

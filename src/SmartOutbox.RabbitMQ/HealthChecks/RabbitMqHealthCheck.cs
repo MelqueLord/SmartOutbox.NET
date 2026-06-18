@@ -17,7 +17,7 @@ namespace SmartOutbox.RabbitMQ.HealthChecks
             _options = options.Value;
         }
 
-        public Task<HealthCheckResult> CheckHealthAsync(HealthCheckContext context, CancellationToken cancellationToken = default)
+        public async Task<HealthCheckResult> CheckHealthAsync(HealthCheckContext context, CancellationToken cancellationToken = default)
         {
             try
             {
@@ -30,13 +30,13 @@ namespace SmartOutbox.RabbitMQ.HealthChecks
                     VirtualHost = _options.VirtualHost,
                     RequestedConnectionTimeout = TimeSpan.FromSeconds(5)
                 };
-                using var connection = factory.CreateConnectionAsync().GetAwaiter().GetResult();
-                using var channel = connection.CreateChannelAsync().GetAwaiter().GetResult();
-                return Task.FromResult(HealthCheckResult.Healthy("RabbitMQ is available."));
+                await using var connection = await factory.CreateConnectionAsync(cancellationToken);
+                await using var channel = await connection.CreateChannelAsync(cancellationToken: cancellationToken);
+                return HealthCheckResult.Healthy("RabbitMQ is available.");
             }
             catch (Exception ex)
             {
-                return Task.FromResult(HealthCheckResult.Unhealthy("RabbitMQ check failed.", ex));
+                return HealthCheckResult.Unhealthy("RabbitMQ check failed.", ex);
             }
         }
     }

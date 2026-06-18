@@ -2,6 +2,7 @@ using System;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using SmartOutbox.Core.Entities;
 using SmartOutbox.Core.Events;
 using SmartOutbox.Core.Interfaces;
@@ -12,11 +13,19 @@ namespace SmartOutbox.EntityFramework
     {
         private readonly ApplicationDbContext _dbContext;
         private readonly IJsonSerializerService _serializer;
+        private readonly ICorrelationContext _correlationContext;
+        private readonly ILogger<EfEventPublisher> _logger;
 
-        public EfEventPublisher(ApplicationDbContext dbContext, IJsonSerializerService serializer)
+        public EfEventPublisher(
+            ApplicationDbContext dbContext,
+            IJsonSerializerService serializer,
+            ICorrelationContext correlationContext,
+            ILogger<EfEventPublisher> logger)
         {
             _dbContext = dbContext;
             _serializer = serializer;
+            _correlationContext = correlationContext;
+            _logger = logger;
         }
 
         public async Task PublishAsync(IntegrationEvent integrationEvent, CancellationToken cancellationToken = default)
@@ -34,12 +43,15 @@ namespace SmartOutbox.EntityFramework
                 Type = integrationEvent.EventType,
                 Payload = payload,
                 CreatedAt = DateTimeOffset.UtcNow,
-                RetryCount = 0
+                RetryCount = 0,
+                CorrelationId = _correlationContext.CorrelationId
             };
 
             await _dbContext.OutboxMessages.AddAsync(outboxMessage, cancellationToken);
-            // NOTE: Do not call SaveChanges here. The caller (application layer) must
-            // commit the unit of work so both domain and outbox are persisted atomically.
+            _logger.LogDebug(
+                "Outbox message {MessageId} staged for event type {EventType}.",
+                outboxMessage.Id,
+                outboxMessage.Type);
         }
     }
 }

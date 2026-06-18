@@ -9,6 +9,7 @@ namespace SmartOutbox.Core.Extensions
         public static IServiceCollection AddSmartOutboxCore(this IServiceCollection services)
         {
             services.AddSingleton<IJsonSerializerService, JsonSerializerService>();
+            services.AddSingleton<ICorrelationContext, CorrelationContext>();
             return services;
         }
     }

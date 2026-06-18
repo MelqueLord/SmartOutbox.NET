@@ -18,14 +18,17 @@ namespace SmartOutbox.Worker.Services
         private readonly IServiceProvider _serviceProvider;
         private readonly ILogger<OutboxProcessorService> _logger;
         private readonly OutboxProcessorOptions _options;
+        private readonly IBackoffCalculator _backoffCalculator;
 
         public OutboxProcessorService(
             IServiceProvider serviceProvider,
             IOptions<OutboxProcessorOptions> options,
+            IBackoffCalculator backoffCalculator,
             ILogger<OutboxProcessorService> logger)
         {
             _serviceProvider = serviceProvider;
             _options = options.Value;
+            _backoffCalculator = backoffCalculator;
             _logger = logger;
         }
 
@@ -69,37 +72,42 @@ namespace SmartOutbox.Worker.Services
 
             foreach (var message in messages)
             {
+                using var logScope = _logger.BeginScope(new
+                {
+                    MessageId = message.Id,
+                    message.CorrelationId,
+                    EventType = message.Type
+                });
+
                 try
                 {
-                    await publisher.PublishAsync(message.Type, message.Payload, cancellationToken);
+                    await publisher.PublishAsync(message.Type, message.Payload, message.Id.ToString("D"), message.CorrelationId, cancellationToken);
                     message.ProcessedAt = DateTimeOffset.UtcNow;
                     message.Error = null;
-                    _logger.LogInformation("Outbox message {MessageId} published successfully.", message.Id);
+                    _logger.LogInformation("Outbox message published successfully.");
                 }
                 catch (Exception ex)
                 {
                     message.RetryCount += 1;
-                    message.Error = ex.Message;
+                    message.Error = ex.Message.Length > 1000 ? ex.Message[..1000] : ex.Message;
 
                     if (message.RetryCount >= _options.MaxRetryCount)
                     {
-                        // Dead-letter: mark processed so it won't be retried.
                         message.ProcessedAt = DateTimeOffset.UtcNow;
                         message.NextAttemptAt = null;
-                        _logger.LogWarning(ex, "Message {MessageId} has reached max retries and is dead-lettered.", message.Id);
+                        _logger.LogWarning(ex, "Outbox message reached max retries and was moved to terminal failure state.");
                     }
                     else
                     {
-                        // Exponential backoff with jitter
-                        var backoffBase = Math.Max(1, _options.BackoffBaseSeconds);
-                        var exponent = message.RetryCount - 1;
-                        var delaySeconds = backoffBase * Math.Pow(2, exponent);
-                        // jitter +/-20%
-                        var jitter = (new Random()).NextDouble() * 0.4 - 0.2;
-                        delaySeconds = Math.Max(1, delaySeconds * (1 + jitter));
-                        message.NextAttemptAt = DateTimeOffset.UtcNow.AddSeconds(delaySeconds);
+                        var delay = _backoffCalculator.CalculateDelay(message.RetryCount);
+                        message.NextAttemptAt = DateTimeOffset.UtcNow.Add(delay);
 
-                        _logger.LogWarning(ex, "Failed to publish message {MessageId}. Retry {RetryCount}/{MaxRetryCount}. Next attempt at {NextAttemptAt}.", message.Id, message.RetryCount, _options.MaxRetryCount, message.NextAttemptAt);
+                        _logger.LogWarning(
+                            ex,
+                            "Failed to publish outbox message. Retry {RetryCount}/{MaxRetryCount}. Next attempt at {NextAttemptAt}.",
+                            message.RetryCount,
+                            _options.MaxRetryCount,
+                            message.NextAttemptAt);
                     }
                 }
             }

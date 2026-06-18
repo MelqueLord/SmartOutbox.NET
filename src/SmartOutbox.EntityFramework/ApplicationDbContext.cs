@@ -50,7 +50,9 @@ namespace SmartOutbox.EntityFramework
                     .HasMaxLength(1000);
                 entity.Property(e => e.NextAttemptAt)
                     .HasColumnType("timestamp with time zone");
-                entity.HasIndex(e => new { e.ProcessedAt, e.RetryCount });
+                entity.Property(e => e.CorrelationId)
+                    .HasMaxLength(100);
+                entity.HasIndex(e => new { e.ProcessedAt, e.RetryCount, e.NextAttemptAt });
             });
         }
     }

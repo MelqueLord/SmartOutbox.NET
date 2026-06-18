@@ -48,8 +48,8 @@ namespace SmartOutbox.EntityFramework.Migrations
                     .HasMaxLength(1000)
                     .HasColumnType("character varying(1000)");
 
-                    b.Property<DateTimeOffset?>("NextAttemptAt")
-                        .HasColumnType("timestamp with time zone");
+                b.Property<DateTimeOffset?>("NextAttemptAt")
+                    .HasColumnType("timestamp with time zone");
 
                 b.Property<DateTimeOffset?>("ProcessedAt")
                     .HasColumnType("timestamp with time zone");
@@ -70,9 +70,13 @@ namespace SmartOutbox.EntityFramework.Migrations
                 b.Property<DateTimeOffset>("CreatedAt")
                     .HasColumnType("timestamp with time zone");
 
+                b.Property<string>("CorrelationId")
+                    .HasMaxLength(100)
+                    .HasColumnType("character varying(100)");
+
                 b.HasKey("Id");
 
-                b.HasIndex("ProcessedAt", "RetryCount");
+                b.HasIndex("ProcessedAt", "RetryCount", "NextAttemptAt");
 
                 b.ToTable("outbox_messages");
             });
