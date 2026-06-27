@@ -53,5 +53,11 @@ namespace SmartOutbox.EntityFramework
                 outboxMessage.Id,
                 outboxMessage.Type);
         }
+
+        public Task PublishAsync<TIntegrationEvent>(TIntegrationEvent integrationEvent, CancellationToken cancellationToken = default)
+            where TIntegrationEvent : IntegrationEvent
+        {
+            return PublishAsync((IntegrationEvent)integrationEvent, cancellationToken);
+        }
     }
 }

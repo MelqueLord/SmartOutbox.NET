@@ -24,6 +24,7 @@ namespace SmartOutbox.EntityFramework
             });
 
             services.AddScoped<IEventPublisher, EfEventPublisher>();
+            services.AddScoped<IIntegrationEventPublisher>(provider => provider.GetRequiredService<IEventPublisher>());
             return services;
         }
     }

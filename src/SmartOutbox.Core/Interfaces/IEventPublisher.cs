@@ -4,7 +4,7 @@ using SmartOutbox.Core.Events;
 
 namespace SmartOutbox.Core.Interfaces
 {
-    public interface IEventPublisher
+    public interface IEventPublisher : IIntegrationEventPublisher
     {
         Task PublishAsync(IntegrationEvent integrationEvent, CancellationToken cancellationToken = default);
     }
