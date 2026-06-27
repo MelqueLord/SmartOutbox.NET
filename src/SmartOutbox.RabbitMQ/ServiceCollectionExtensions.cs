@@ -1,5 +1,9 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using SmartOutbox.Core.Consumption;
+using SmartOutbox.Core.Events;
+using SmartOutbox.Core.Extensions;
 using SmartOutbox.RabbitMQ.HealthChecks;
 using SmartOutbox.RabbitMQ.Options;
 
@@ -22,6 +26,18 @@ namespace SmartOutbox.RabbitMQ
             services.AddSingleton<IRabbitMqClient, DefaultRabbitMqClient>();
             services.AddSingleton<IRabbitMqPublisher, RabbitMqPublisher>();
             services.AddHealthChecks().AddCheck<RabbitMqHealthCheck>("rabbitmq");
+            return services;
+        }
+
+        public static IServiceCollection AddSmartOutboxRabbitMqConsumer<TIntegrationEvent, THandler>(this IServiceCollection services, IConfiguration configuration)
+            where TIntegrationEvent : IntegrationEvent
+            where THandler : class, IIntegrationEventHandler<TIntegrationEvent>
+        {
+            services.AddSmartOutboxCore();
+            services.AddSmartOutboxRabbitMq(configuration);
+            services.AddIntegrationEventHandler<TIntegrationEvent, THandler>();
+            services.TryAddSingleton<IProcessedMessageStore, InMemoryProcessedMessageStore>();
+            services.AddHostedService<RabbitMqIntegrationEventConsumer<TIntegrationEvent>>();
             return services;
         }
     }
