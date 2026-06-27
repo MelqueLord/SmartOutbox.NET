@@ -1,6 +1,6 @@
 # SmartOutbox.NET
 
-SmartOutbox.NET is a production-minded .NET 8 sample that demonstrates the Transactional Outbox Pattern with PostgreSQL, Entity Framework Core, RabbitMQ, a background worker, structured logging, health checks, and automated tests.
+SmartOutbox.NET is a production-minded .NET 8 sample that demonstrates the Transactional Outbox Pattern with PostgreSQL, Entity Framework Core, RabbitMQ, typed publisher and consumer contracts, a background worker, structured logging, health checks, and automated tests.
 
 The repository is intentionally small: it shows the core production concepts without hiding them behind framework noise or academic abstractions.
 
@@ -27,9 +27,9 @@ flowchart LR
 
 Components:
 
-- `SmartOutbox.Core`: entities, integration events, serialization, correlation context, and abstractions.
+- `SmartOutbox.Core`: entities, integration events, publisher/consumer contracts, serialization, correlation context, and idempotency helpers.
 - `SmartOutbox.EntityFramework`: EF Core DbContext, migrations, and outbox event publisher.
-- `SmartOutbox.RabbitMQ`: durable RabbitMQ topology, publisher confirms, message metadata, and broker health check.
+- `SmartOutbox.RabbitMQ`: durable RabbitMQ topology, publisher confirms, message metadata, broker health check, and typed hosted consumers.
 - `SmartOutbox.Worker`: polling background service with retry, exponential backoff, and terminal failure handling.
 - `SmartOutbox.SampleApi`: order API that writes orders and outbox events atomically.
 - `tests`: xUnit coverage for serialization, persistence, retry/backoff, and worker processing.
@@ -54,6 +54,8 @@ Components:
 - RabbitMQ durable topic exchange, durable queue, dead-letter exchange, and dead-letter queue.
 - Publisher confirmations and mandatory publish routing.
 - Message ID tracking using the outbox message ID.
+- Typed `IIntegrationEventPublisher` and `IIntegrationEventHandler<TEvent>` contracts for application developers.
+- Consumer-side duplicate detection through `IProcessedMessageStore`.
 - Structured logs with correlation IDs.
 - `/healthz` endpoint for database and RabbitMQ checks.
 - Docker Compose environment for PostgreSQL, RabbitMQ, API, and worker.
@@ -111,13 +113,49 @@ The next retry timestamp is stored in `NextAttemptAt`, so workers do not repeate
 
 Outbox delivery is at-least-once. The worker marks a row as processed only after RabbitMQ accepts the publish, but a crash between broker publish and database update can still create a duplicate delivery. Consumers should treat `messageId` as an idempotency key and store processed IDs when side effects are not naturally idempotent.
 
+SmartOutbox.NET includes `IntegrationEventConsumer<TEvent>` and `IProcessedMessageStore` so consumer applications can keep handler code focused on business behavior. The built-in in-memory store is for local demos; production consumers should provide a durable implementation.
+
+## Developer Contracts
+
+Application code publishes without knowing RabbitMQ:
+
+```csharp
+await publisher.PublishAsync(
+    new OrderCreatedEvent(order.Id, order.CustomerName, order.Amount),
+    cancellationToken);
+```
+
+Consumer code handles a typed event:
+
+```csharp
+public sealed class OrderCreatedHandler : IIntegrationEventHandler<OrderCreatedEvent>
+{
+    public Task HandleAsync(
+        OrderCreatedEvent integrationEvent,
+        IntegrationMessageContext context,
+        CancellationToken cancellationToken = default)
+    {
+        return Task.CompletedTask;
+    }
+}
+```
+
+RabbitMQ consumers can be hosted with:
+
+```csharp
+builder.Services.AddSmartOutboxRabbitMqConsumer<OrderCreatedEvent, OrderCreatedHandler>(
+    builder.Configuration);
+```
+
+More detail: [Developer Contracts](docs/developer-contracts.md).
+
 ## Scalability Considerations
 
 - Increase `OutboxProcessor:BatchSize` for higher throughput.
 - Run multiple worker replicas when the database query and row-locking strategy are strengthened for high concurrency.
 - Partition event routing by topic keys when there are multiple event families.
 - Keep event payloads small and immutable.
-- Add consumer-side idempotency storage before handling money, inventory, email, or external API side effects.
+- Replace the in-memory processed-message store with a durable `IProcessedMessageStore` before handling money, inventory, email, or external API side effects.
 - Use broker and database metrics to tune polling interval, batch size, and retry caps.
 
 ## Local Setup
@@ -202,7 +240,8 @@ tests/
   SmartOutbox.UnitTests/
   SmartOutbox.IntegrationTests/
 docs/
-  architecture.md
+  ARCHITECTURE.md
+  developer-contracts.md
   outbox-pattern.md
   rabbitmq-integration.md
   retry-and-backoff.md
@@ -210,7 +249,8 @@ docs/
 
 ## Documentation
 
-- [Architecture](docs/architecture.md)
+- [Architecture](docs/ARCHITECTURE.md)
+- [Developer Contracts](docs/developer-contracts.md)
 - [Outbox Pattern](docs/outbox-pattern.md)
 - [RabbitMQ Integration](docs/rabbitmq-integration.md)
 - [Retry and Backoff](docs/retry-and-backoff.md)
@@ -219,7 +259,7 @@ docs/
 
 - Add row claiming with `FOR UPDATE SKIP LOCKED` for safer multi-worker concurrency.
 - Add OpenTelemetry traces and metrics.
-- Add consumer sample with inbox/idempotency table.
+- Add a production consumer sample with a durable inbox/idempotency table.
 - Add integration tests with Testcontainers for PostgreSQL and RabbitMQ.
 - Add event versioning and schema evolution guidance.
-- Add CI workflow for build, test, and formatting checks.
+- Add formatting checks to the CI workflow.

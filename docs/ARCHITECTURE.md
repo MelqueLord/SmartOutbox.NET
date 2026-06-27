@@ -13,7 +13,7 @@ flowchart TB
     subgraph Core["SmartOutbox.Core"]
         Entities[Order and OutboxMessage]
         Events[IntegrationEvent]
-        Abstractions[Publisher and serializer contracts]
+        Abstractions[Publisher, consumer, serializer and idempotency contracts]
     end
 
     subgraph EF["SmartOutbox.EntityFramework"]
@@ -31,6 +31,7 @@ flowchart TB
         Publisher[RabbitMqPublisher]
         Client[DefaultRabbitMqClient]
         Health[RabbitMqHealthCheck]
+        Consumer[RabbitMqIntegrationEventConsumer]
     end
 
     Controller --> OrderService
@@ -40,11 +41,12 @@ flowchart TB
     Processor --> DbContext
     Processor --> Publisher
     Publisher --> Client
+    Consumer --> Core
 ```
 
 ## Component Responsibilities
 
-`SmartOutbox.Core` owns shared contracts and stable domain concepts. It has no dependency on EF Core, ASP.NET Core, or RabbitMQ.
+`SmartOutbox.Core` owns shared contracts and stable domain concepts. It has no dependency on EF Core, ASP.NET Core, or RabbitMQ. Application developers publish through `IIntegrationEventPublisher`; consumer developers implement `IIntegrationEventHandler<TIntegrationEvent>`.
 
 `SmartOutbox.EntityFramework` owns persistence. `EfEventPublisher` stages outbox rows but does not call `SaveChanges`, leaving transaction control with the application service.
 
@@ -52,7 +54,7 @@ flowchart TB
 
 `SmartOutbox.Worker` owns polling, retry decisions, and marking messages as processed or terminally failed.
 
-`SmartOutbox.RabbitMQ` owns broker topology and publish reliability.
+`SmartOutbox.RabbitMQ` owns broker topology, publish reliability, and the hosted consumer bridge that turns broker deliveries into typed handlers.
 
 ## Design Decisions
 
@@ -61,12 +63,13 @@ flowchart TB
 - The outbox message ID is used as the RabbitMQ `messageId` for consumer idempotency.
 - Correlation IDs are captured from `X-Correlation-ID` and stored on outbox messages.
 - RabbitMQ topology is declared by the publisher at startup for local reliability and simple operations.
+- Consumer handlers are framework-agnostic. RabbitMQ is an adapter around `IntegrationEventConsumer<TIntegrationEvent>`.
 
 ## Tradeoffs
 
 - Polling is simple and reliable, but less immediate than database notifications.
 - The worker currently processes rows without a database row-claim mechanism; this is fine for a small sample but should be strengthened before running many worker replicas.
-- The sample shows publisher reliability, not consumer-side inbox processing.
+- The built-in in-memory processed-message store is for samples; durable consumer idempotency should live in the consumer database.
 - Terminal failures are stored in the outbox table rather than moved to a separate database table.
 
 ## Limitations
@@ -74,4 +77,4 @@ flowchart TB
 - No distributed tracing exporter is configured.
 - No Testcontainers-based broker/database integration tests are included.
 - No event schema registry or versioning system is included.
-- No consumer application is included.
+- No full production consumer application with a durable inbox table is included.
